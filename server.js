@@ -2,25 +2,25 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
-// 🔍 Route test (important pour vérifier Render)
 app.get('/', (req, res) => {
-  res.send('API PDF en ligne 🚀');
+  res.send('API PDF en ligne');
 });
 
-// 📄 Route PDF
 app.post('/pdf', async (req, res) => {
-  try {
-    const data = req.body;
+  let browser;
 
-    // HTML simple (tu pourras améliorer après)
+  try {
+    const data = req.body || {};
+
     const html = `
       <html>
         <head>
+          <meta charset="utf-8" />
           <style>
             body {
-              font-family: Arial;
+              font-family: Arial, sans-serif;
               padding: 40px;
               color: #1f2937;
             }
@@ -30,44 +30,52 @@ app.post('/pdf', async (req, res) => {
           </style>
         </head>
         <body>
-          <h1>Facture ${data.invoice_number}</h1>
-          <p>Total: ${data.total} $</p>
+          <h1>Facture ${data.invoice_number || 'SANS-NUMERO'}</h1>
+          <p>Total: ${data.total ?? 0} $</p>
         </body>
       </html>
     `;
 
-    const browser = await puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      headless: true
+    console.log('Début génération PDF');
+
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
+
+    console.log('Browser lancé');
 
     const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
 
-    await page.setContent(html, {
-      waitUntil: 'networkidle0'
-    });
+    console.log('HTML chargé');
 
     const pdf = await page.pdf({
       format: 'A4',
       printBackground: true
     });
 
-    await browser.close();
+    console.log('PDF généré');
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'inline; filename=facture.pdf');
-
     res.send(pdf);
-
   } catch (error) {
-    console.error('Erreur PDF:', error);
-    res.status(500).send('Erreur génération PDF');
+    console.error('Erreur PDF complète:', error);
+    res.status(500).json({
+      error: error?.message || 'Erreur inconnue',
+      stack: error?.stack || null
+    });
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch {}
+    }
   }
 });
 
-// 🔥 PORT dynamique pour Render
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
   console.log('Server running on port', PORT);
 });
